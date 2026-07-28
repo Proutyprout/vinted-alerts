@@ -1,9 +1,4 @@
 #!/bin/bash
-# Tente de créer l'instance Oracle Cloud. Si "Out of capacity", échoue
-# silencieusement (le workflow réessaiera au prochain cron). Si succès,
-# affiche l'IP publique, envoie une alerte Telegram et crée un marqueur
-# pour que le workflow arrête de réessayer.
-
 set -e
 
 FLAG_FILE="instance_created.flag"
@@ -13,6 +8,26 @@ if [ -f "$FLAG_FILE" ]; then
   exit 0
 fi
 
+if [ -n "$OCI_IMAGE_ID" ]; then
+  echo "Utilisation de l'image fournie manuellement : $OCI_IMAGE_ID"
+  IMAGE_ID="$OCI_IMAGE_ID"
+else
+  echo "Recherche de l'image Ubuntu 24.04 la plus récente..."
+  IMAGE_ID=$(oci compute image list \
+    --compartment-id "$OCI_COMPARTMENT_ID" \
+    --operating-system "Canonical Ubuntu" \
+    --operating-system-version "24.04" \
+    --shape "VM.Standard.E2.1.Micro" \
+    --sort-by TIMECREATED --sort-order DESC \
+    --query 'data[0].id' --raw-output)
+fi
+
+if [ -z "$IMAGE_ID" ] || [ "$IMAGE_ID" = "null" ]; then
+  echo "❌ Impossible de trouver une image Ubuntu 24.04 compatible."
+  exit 1
+fi
+
+echo "Image trouvée : $IMAGE_ID"
 echo "Tentative de création de l'instance..."
 
 OUTPUT=$(oci compute instance launch \
@@ -20,7 +35,7 @@ OUTPUT=$(oci compute instance launch \
   --availability-domain "$OCI_AVAILABILITY_DOMAIN" \
   --shape "VM.Standard.E2.1.Micro" \
   --display-name "vinted-alerts" \
-  --image-id "$OCI_IMAGE_ID" \
+  --image-id "$IMAGE_ID" \
   --subnet-id "$OCI_SUBNET_ID" \
   --assign-public-ip true \
   --metadata "{\"ssh_authorized_keys\": \"$OCI_SSH_PUBLIC_KEY\"}" \
@@ -35,7 +50,6 @@ if [ "$SUCCESS" = true ]; then
 
   INSTANCE_ID=$(echo "$OUTPUT" | grep -o '"id": "[^"]*"' | head -1 | cut -d'"' -f4)
 
-  # Récupère l'IP publique (peut prendre quelques secondes à être assignée)
   sleep 15
   PUBLIC_IP=$(oci compute instance list-vnics \
     --instance-id "$INSTANCE_ID" \

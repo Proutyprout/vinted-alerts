@@ -63,7 +63,7 @@ if [ "$SUCCESS" = true ]; then
 
   exit 0
 else
-  if echo "$OUTPUT" | grep -qi "Out of capacity\|OutOfHostCapacity"; then
+  if echo "$OUTPUT" | grep -qi "capacity"; then
     echo "⏳ Toujours pas de capacité disponible, on réessaiera au prochain cycle."
     exit 0
   else

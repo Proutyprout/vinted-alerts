@@ -1,0 +1,55 @@
+name: Retry Oracle VM Creation
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # toutes les 10 minutes
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer OCI CLI
+        run: pip install oci-cli --break-system-packages
+
+      - name: Configurer les identifiants Oracle
+        run: |
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=~/.oci/key.pem
+          EOF
+          chmod 600 ~/.oci/config
+
+      - name: Tenter la création de l'instance
+        env:
+          OCI_COMPARTMENT_ID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
+          OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
+          OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
+          OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: bash try_create_instance.sh
+
+      - name: Sauvegarder le marqueur si succès
+        run: |
+          if [ -f instance_created.flag ]; then
+            git config user.name "oracle-retry-bot"
+            git config user.email "actions@github.com"
+            git add instance_created.flag
+            git commit -m "Instance créée avec succès [skip ci]" || true
+            git push
+          fi

@@ -62,7 +62,7 @@ jobs:
               break
             fi
             ATTEMPT=$((ATTEMPT + 1))
-            sleep 300
+            sleep 60
           done
 
       - name: Sauvegarder le marqueur si succès

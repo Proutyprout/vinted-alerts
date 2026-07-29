@@ -2,8 +2,12 @@ name: Retry Oracle VM Creation
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # toutes les 10 minutes
+    - cron: "0 */6 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: oracle-retry
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -11,6 +15,7 @@ permissions:
 jobs:
   retry:
     runs-on: ubuntu-latest
+    timeout-minutes: 355
     steps:
       - name: Checkout du dépôt
         uses: actions/checkout@v4
@@ -33,7 +38,7 @@ jobs:
           EOF
           chmod 600 ~/.oci/config
 
-      - name: Tenter la création de l'instance
+      - name: Boucle de tentatives (toutes les 5 min, pendant ~5h50)
         env:
           OCI_COMPARTMENT_ID: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_AVAILABILITY_DOMAIN: ${{ secrets.OCI_AVAILABILITY_DOMAIN }}
@@ -42,7 +47,23 @@ jobs:
           OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: bash try_create_instance.sh
+        run: |
+          END_TIME=$(( $(date +%s) + 5*60*60 + 50*60 ))
+          ATTEMPT=1
+          while [ "$(date +%s)" -lt "$END_TIME" ]; do
+            if [ -f instance_created.flag ]; then
+              echo "Instance déjà créée, arrêt de la boucle."
+              break
+            fi
+            echo "=== Tentative #$ATTEMPT ($(date -u +%H:%M:%S) UTC) ==="
+            bash try_create_instance.sh
+            if [ -f instance_created.flag ]; then
+              echo "Succès à la tentative #$ATTEMPT !"
+              break
+            fi
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep 300
+          done
 
       - name: Sauvegarder le marqueur si succès
         run: |

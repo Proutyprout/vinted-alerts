@@ -23,8 +23,8 @@ else
 fi
 
 if [ -z "$IMAGE_ID" ] || [ "$IMAGE_ID" = "null" ]; then
-  echo "❌ Impossible de trouver une image Ubuntu 24.04 compatible."
-  exit 1
+  echo "❌ Impossible de trouver une image Ubuntu 24.04 compatible cette fois-ci, on réessaiera au prochain cycle."
+  exit 0
 fi
 
 echo "Image trouvée : $IMAGE_ID"
@@ -63,15 +63,18 @@ if [ "$SUCCESS" = true ]; then
 
   exit 0
 else
-  if echo "$OUTPUT" | grep -qi "capacity"; then
-    echo "⏳ Toujours pas de capacité disponible, on réessaiera au prochain cycle."
+  if echo "$OUTPUT" | grep -qi "capacity\|timed out\|timeout\|connection"; then
+    echo "⏳ Toujours pas de capacité disponible (ou problème réseau temporaire), on réessaiera au prochain cycle."
     exit 0
   else
     echo "❌ Erreur inattendue :"
     echo "$OUTPUT"
-    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-      -d "chat_id=${TELEGRAM_CHAT_ID}" \
-      -d "text=⚠️ Erreur inattendue lors de la tentative de création de VM (pas un souci de capacité). Vérifie les logs GitHub Actions."
-    exit 1
+    if [ ! -f error_notified.flag ]; then
+      curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        -d "chat_id=${TELEGRAM_CHAT_ID}" \
+        -d "text=⚠️ Erreur inattendue lors d'une tentative de création de VM (pas capacité/réseau). La boucle continue quand même. Vérifie les logs GitHub Actions si ça persiste."
+      echo "true" > error_notified.flag
+    fi
+    exit 0
   fi
 fi
